@@ -1,0 +1,6 @@
+transformers
+datasets
+pandas
+scikit-learn
+seqeval
+torch
