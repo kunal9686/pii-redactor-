@@ -10,5 +10,7 @@ Requires-Dist: pillow
 Requires-Dist: reportlab
 Requires-Dist: pytesseract
 Requires-Dist: python-dotenv
+Requires-Dist: flask
+Requires-Dist: werkzeug
 Dynamic: author
 Dynamic: requires-dist

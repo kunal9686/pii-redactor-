@@ -6,3 +6,5 @@ pillow
 reportlab
 pytesseract
 python-dotenv
+flask
+werkzeug
