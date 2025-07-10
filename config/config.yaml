@@ -1,0 +1,7 @@
+paths:
+  poppler: "C:/Users/Devansh/poppler/poppler-24.08.0/Library/bin"
+  tesseract: "C:/Program Files/Tesseract-OCR/tesseract.exe"
+  
+redaction:
+  padding: 3  # Extra pixels around redacted text
+  min_confidence: 0.85  # Minimum detection confidence

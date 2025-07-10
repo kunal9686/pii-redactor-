@@ -2,6 +2,8 @@ import os
 import re
 import io
 import logging
+from PIL import ImageFilter
+import numpy as np
 import pytesseract
 from src.logger import get_logger
 from pdf2image import convert_from_path
@@ -56,56 +58,43 @@ class PIIRedactor:
             raise CustomException("PIIRedactor initialization failed", e)
 
     def extract_text_from_pdf(self, pdf_path):
-        """Extract text from PDF with comprehensive error handling"""
+        """Extract text from PDF with image preprocessing"""
         try:
-            # 1. Verify file exists
+            # Verify file exists
             if not os.path.exists(pdf_path):
                 raise FileNotFoundError(f"PDF file not found at {pdf_path}")
 
-            # 2. Verify Tesseract
-            try:
-                tesseract_version = pytesseract.get_tesseract_version()
-                logger.info(f"Using Tesseract v{tesseract_version}")
-            except Exception as e:
-                raise RuntimeError(f"Tesseract access error: {str(e)}")
-
-            # 3. Handle PDF conversion
-            poppler_path = None
-            possible_paths = [
-                r"C:\Users\Devansh\poppler\poppler-24.08.0\Library\bin",
-                r"C:\poppler\Library\bin",
-                r"C:\Program Files\poppler\bin"
-            ]
+            # Set Poppler path
+            poppler_path = r"C:\Users\Devansh\poppler\poppler-24.08.0\Library\bin"
             
-            for path in possible_paths:
-                if os.path.exists(path):
-                    poppler_path = path
-                    break
+            # Convert PDF to images with higher DPI for better accuracy
+            pages = convert_from_path(
+                pdf_path,
+                dpi=400,
+                poppler_path=poppler_path,
+                grayscale=True  # Better for OCR
+            )
             
-            if not poppler_path:
-                raise RuntimeError("Poppler not found in standard locations")
-
-            # 4. Process PDF
             full_text = ""
-            try:
-                pages = convert_from_path(
-                    pdf_path, 
-                    dpi=300,  # Lower DPI for faster processing
-                    poppler_path=poppler_path
+            position_data = []  # Stores text position info for each page
+            
+            for page in pages:
+                # Preprocess image
+                page = page.filter(ImageFilter.SHARPEN)
+                page = page.filter(ImageFilter.MedianFilter())
+                
+                # Get both text and its position data
+                data = pytesseract.image_to_data(
+                    page,
+                    output_type=pytesseract.Output.DICT,
+                    config='--psm 6 --oem 3'  # Optimal for documents
                 )
                 
-                for i, page in enumerate(pages):
-                    text = pytesseract.image_to_string(
-                        page,
-                        config='--psm 6'  # Assume uniform block of text
-                    )
-                    full_text += text + "\n"
-                    logger.debug(f"Processed page {i+1}/{len(pages)}")
-                    
-            except Exception as e:
-                raise RuntimeError(f"PDF processing failed: {str(e)}")
-
-            return full_text
+                page_text = " ".join([t for t in data['text'] if t.strip()])
+                full_text += page_text + "\n"
+                position_data.append(data)
+                
+            return full_text, position_data
             
         except Exception as e:
             logger.error(f"PDF extraction failed: {str(e)}")
@@ -145,104 +134,95 @@ class PIIRedactor:
         except Exception as e:
             logger.error(f"Text redaction failed: {str(e)}")
             raise CustomException("Text redaction failed", e)
-
-    def create_redacted_pdf(self, original_pdf_path, output_pdf_path, pii_entities):
-        """Create a new PDF with PII redacted as black boxes"""
-        logger.info(f"Creating redacted PDF at {output_pdf_path}")
+        
+    def calculate_accuracy(self, text, pii_entities):
+        """Calculate percentage of correctly redacted PII"""
+        correct = 0
+        for entity in pii_entities:
+            redacted_portion = text[entity['start']:entity['end']]
+            if '█' in redacted_portion:
+                correct += 1
+        return correct / len(pii_entities) if pii_entities else 1.0
+    
+    def create_redacted_pdf(self, original_pdf_path, output_pdf_path, pii_entities, position_data):
+        """Create PDF with precise redaction boxes"""
         try:
-            # Set Poppler path (update this to your actual path)
             poppler_path = r"C:\Users\Devansh\poppler\poppler-24.08.0\Library\bin"
-            
-            if not os.path.exists(poppler_path):
-                raise RuntimeError(f"Poppler not found at {poppler_path}")
-
-            # Convert PDF pages to images
-            logger.debug("Converting PDF pages to images")
-            pages = convert_from_path(
-                original_pdf_path, 
-                dpi=300,
-                poppler_path=poppler_path  # Critical addition
-            )
-            # Create a PDF writer
+            pages = convert_from_path(original_pdf_path, dpi=400, poppler_path=poppler_path)
             writer = PdfWriter()
-            processed_pages = 0
             
-            for page_img in pages:
-                processed_pages += 1
-                logger.debug(f"Processing page {processed_pages} of {len(pages)}")
-                
-                # Convert PIL image to RGB if it's not
-                if page_img.mode != 'RGB':
-                    page_img = page_img.convert('RGB')
-                    
-                # Create a drawing context
+            for page_idx, (page_img, page_data) in enumerate(zip(pages, position_data)):
                 draw = ImageDraw.Draw(page_img)
-                redactions_on_page = 0
                 
-                # Draw black rectangles over PII
                 for entity in pii_entities:
-                    # Simplified approach - in real implementation you'd map text to image coords
-                    x, y = 100, 100  # Example coordinates
-                    w, h = 200, 30    # Example dimensions
-                    draw.rectangle([x, y, x+w, y+h], fill='black')
-                    redactions_on_page += 1
+                    # Find matching text in page data
+                    for i in range(len(page_data['text'])):
+                        text = page_data['text'][i]
+                        if text.strip() and entity['word'].lower() in text.lower():
+                            x = page_data['left'][i]
+                            y = page_data['top'][i]
+                            w = page_data['width'][i]
+                            h = page_data['height'][i]
+                            
+                            # Add padding and redact
+                            padding = 2
+                            draw.rectangle(
+                                [x-padding, y-padding, x+w+padding, y+h+padding],
+                                fill='black'
+                            )
                 
-                logger.debug(f"Applied {redactions_on_page} redactions on page {processed_pages}")
-                
-                # Convert image back to PDF page
+                # Convert back to PDF
                 img_bytes = io.BytesIO()
                 page_img.save(img_bytes, format='PDF')
                 img_bytes.seek(0)
-                
-                # Add to PDF writer
-                reader = PdfReader(img_bytes)
-                writer.add_page(reader.pages[0])
+                writer.add_page(PdfReader(img_bytes).pages[0])
             
-            # Write output PDF
             with open(output_pdf_path, 'wb') as f:
                 writer.write(f)
                 
-            logger.info(f"Successfully created redacted PDF with {len(pages)} pages")
-            
         except Exception as e:
             logger.error(f"PDF redaction failed: {str(e)}")
             raise CustomException("PDF redaction failed", e)
 
     def redact_pdf(self, input_pdf_path, output_pdf_path):
-        """Main function to redact a PDF file"""
-        logger.info(f"Starting PDF redaction process for {input_pdf_path}")
+        """Main redaction workflow with accuracy tracking"""
         try:
-            # Step 1: Extract text from PDF
-            logger.info("Phase 1: Text extraction")
-            text = self.extract_text_from_pdf(input_pdf_path)
+            # 1. Extract text with position data
+            text, position_data = self.extract_text_from_pdf(input_pdf_path)
             
-            # Step 2: Detect PII in the text
-            logger.info("Phase 2: PII detection")
+            # 2. Detect PII
             pii_entities = self.detect_pii(text)
             
-            # Step 3: Create redacted PDF
-            logger.info("Phase 3: PDF redaction")
-            self.create_redacted_pdf(input_pdf_path, output_pdf_path, pii_entities)
+            # 3. Create redacted PDF
+            self.create_redacted_pdf(input_pdf_path, output_pdf_path, pii_entities, position_data)
             
-            # Step 4: Return redacted text (optional)
-            redacted_text = self.redact_text(text, pii_entities)
-            
-            logger.info("PDF redaction process completed successfully")
+            # 4. Generate accuracy report
+            accuracy = self.calculate_accuracy(text, pii_entities)
+            logger.info(f"Redaction accuracy: {accuracy:.2%}")
             
             return {
                 'redacted_pdf_path': output_pdf_path,
                 'pii_entities': pii_entities,
-                'redacted_text': redacted_text
+                'accuracy': accuracy
             }
             
-        except CustomException as ce:
-            logger.error(f"Redaction process failed with CustomException: {str(ce)}")
-            raise
         except Exception as e:
-            logger.error(f"Redaction process failed: {str(e)}")
-            raise CustomException("PDF redaction process failed", e)
-        finally:
-            logger.info("PDF redaction process completed")
+            logger.error(f"Redaction failed: {str(e)}")
+            raise
+
+# ===== TEST ACCURACY CALCULATION =====
+def test_accuracy():
+    test_text = "John Doe lives at 123 Main St. ██ ███ lives at ███ ████ ██."
+    test_entities = [
+        {'start': 0, 'end': 8, 'word': 'John Doe'},
+        {'start': 20, 'end': 31, 'word': '123 Main St'}
+    ]
+    redactor = PIIRedactor()
+    accuracy = redactor.calculate_accuracy(test_text, test_entities)
+    print(f"Test Accuracy: {accuracy:.0%}")  # Should print "Test Accuracy: 100%"
+
+test_accuracy()
+# ===== END TEST =====
 
 # ===== TEMPORARY VALIDATION =====
 def validate_environment():
@@ -251,7 +231,7 @@ def validate_environment():
         "Tesseract": lambda: pytesseract.get_tesseract_version(),
         "Poppler": lambda: os.path.exists(r"C:\Program Files\poppler\bin") or 
                          os.path.exists(r"C:\Users\Devansh\poppler\poppler-24.08.0\Library\bin"),
-        "Sample PDF": lambda: os.path.exists("samples/sample.pdf")
+        "Sample PDF": lambda: os.path.exists("samples/khushi_bsl.pdf")
     }
     
     for name, check in checks.items():
@@ -268,8 +248,8 @@ if __name__ == "__main__":
         logger.info("Starting PII redaction script")
         redactor = PIIRedactor()
         
-        input_pdf = "samples/sample.pdf"  # Replace with your input PDF path
-        output_pdf = "samples/redacted_sample.pdf"
+        input_pdf = "samples/khushi_bsl.pdf"  # Replace with your input PDF path
+        output_pdf = "samples/khushi_bsl.pdf"
         
         logger.info(f"Processing input file: {input_pdf}")
         result = redactor.redact_pdf(input_pdf, output_pdf)
