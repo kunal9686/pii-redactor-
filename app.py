@@ -1,10 +1,10 @@
-from flask import Flask, request, jsonify, send_file
-from werkzeug.utils import secure_filename
 import os
-from main import PIIRedactor
 import uuid
 import logging
+from main import PIIRedactor
 from threading import Thread
+from flask import Flask, request, jsonify, send_file
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
