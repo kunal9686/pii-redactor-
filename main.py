@@ -263,4 +263,3 @@ if __name__ == "__main__":
         logger.error(f"Script failed with unexpected error: {str(e)}")
     finally:
         logger.info("PII redaction script execution completed")
-    
