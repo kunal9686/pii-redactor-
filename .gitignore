@@ -4,3 +4,8 @@ logs/
 models/
 samples/
 new_1.egg-info/
+samples/
+status/
+processed/
+uploads/
+
