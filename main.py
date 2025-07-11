@@ -171,12 +171,13 @@ class PIIRedactor:
                                 fill='black'
                             )
                 
-                # Convert back to PDF
+                # Convert back to PDF properly
                 img_bytes = io.BytesIO()
-                page_img.save(img_bytes, format='PDF')
+                page_img.save(img_bytes, format='PDF', quality=100)
                 img_bytes.seek(0)
                 writer.add_page(PdfReader(img_bytes).pages[0])
             
+            # Properly save the PDF
             with open(output_pdf_path, 'wb') as f:
                 writer.write(f)
                 
@@ -196,14 +197,19 @@ class PIIRedactor:
             # 3. Create redacted PDF
             self.create_redacted_pdf(input_pdf_path, output_pdf_path, pii_entities, position_data)
             
-            # 4. Generate accuracy report
+            # 4. Get page count
+            reader = PdfReader(input_pdf_path)
+            page_count = len(reader.pages)
+            
+            # 5. Generate accuracy report
             accuracy = self.calculate_accuracy(text, pii_entities)
             logger.info(f"Redaction accuracy: {accuracy:.2%}")
             
             return {
                 'redacted_pdf_path': output_pdf_path,
                 'pii_entities': pii_entities,
-                'accuracy': accuracy
+                'accuracy': accuracy,
+                'page_count': page_count
             }
             
         except Exception as e:
