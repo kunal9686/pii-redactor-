@@ -82,7 +82,7 @@ def upload_file():
         def process_file():
             try:
                 # Uncomment the actual processing when ready
-                result = redactor.redact_pdf(upload_path, processed_path)
+                result = redactor.redact_pdf(upload_path, processed_path, include_snippets=True)
                 
                 update_status(file_id, 'completed', {
                     'processed_path': processed_path,
@@ -90,7 +90,9 @@ def upload_file():
                     'pii_count': len(result['pii_entities']),
                     'accuracy': result['accuracy'],
                     'page_count': result.get('page_count', 1),
-                    'pii_types': result.get('pii_types', {})  # Add this line
+                    'pii_types': result.get('pii_types', {}),  # Add this line
+                    'original_snippet': result.get('original_snippet', ''),
+                    'redacted_snippet': result.get('redacted_snippet', '')
                 })
             except Exception as e:
                 logging.error(f"Error processing file: {str(e)}")
@@ -212,11 +214,13 @@ def process_sample():
                 'pii_count': 8,
                 'accuracy': 0.95,
                 'page_count': 3,
-                'pii_types': {  # Add sample PII types
+                'pii_types': {
                     'PER': 3,
                     'LOC': 3,
                     'PHONE': 2
-                }
+                },
+                'original_snippet': 'John Doe lives at 123 Main St, Springfield. Contact: johndoe@example.com, (555) 123-4567.',
+                'redacted_snippet': '████ ███ lives at ███ ████ ██, ███████████. Contact: █████████████████, (███) ███-████.'
             })
             
         except Exception as e:

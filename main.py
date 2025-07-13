@@ -185,19 +185,21 @@ class PIIRedactor:
             logger.error(f"PDF redaction failed: {str(e)}")
             raise CustomException("PDF redaction failed", e)
 
-    def redact_pdf(self, input_pdf_path, output_pdf_path):
+    def redact_pdf(self, input_pdf_path, output_pdf_path, include_snippets=False):
         """Main redaction workflow with accuracy tracking"""
         try:
             # 1. Extract text with position data
             text, position_data = self.extract_text_from_pdf(input_pdf_path)
-            
+            original_snippet = text[:500] if include_snippets else ""
+
             # 2. Detect PII
             pii_entities = self.detect_pii(text)
             
             # 3. Redact text and calculate accuracy
             redacted_text = self.redact_text(text, pii_entities)
             accuracy = self.calculate_accuracy(redacted_text, pii_entities)
-            
+            redacted_snippet = redacted_text[:500] if include_snippets else ""
+
             logger.info(f"Redaction accuracy: {accuracy:.2%}")
 
             # 4. Count PII types
@@ -219,7 +221,9 @@ class PIIRedactor:
                 'pii_entities': pii_entities,
                 'accuracy': float(accuracy),  # Convert to float for JSON serialization
                 'page_count': page_count,
-                'pii_types': pii_types  # Add this line
+                'pii_types': pii_types,
+                'original_snippet': original_snippet,
+                'redacted_snippet': redacted_snippet
             }
             
         except Exception as e:

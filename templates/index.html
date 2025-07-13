@@ -296,16 +296,11 @@
                                     <!-- Sample redacted content - would be dynamic in real app -->
                                     <div class="mb-4">
                                         <p class="text-sm text-gray-500">Original:</p>
-                                        <p class="text-gray-800">John Doe lives at 123 Main St, Springfield.</p>
+                                        <p id="originalPreview" class="text-gray-800 whitespace-pre-wrap"></p>
                                     </div>
                                     <div>
                                         <p class="text-sm text-gray-500">Redacted:</p>
-                                        <p class="text-gray-800">
-                                            <span class="redaction-box bg-black text-black inline-block px-1">████  ███</span> 
-                                            lives at 
-                                            <span class="redaction-box bg-black text-black inline-block px-1">███  ████  ██</span>, 
-                                            <span class="redaction-box bg-black text-black inline-block px-1">███████████</span>.
-                                        </p>
+                                        <p id="redactedPreview" class="text-gray-800 whitespace-pre-wrap"></p>
                                     </div>
                                 </div>
                             </div>
@@ -605,8 +600,21 @@
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
-        // Keep your existing helper functions (formatFileSize, showToast)
-
+        async function fetchPreview(fileId, type, elementId) {
+            try {
+                const response = await fetch(`/preview/${type}/${fileId}`);
+                if (!response.ok) throw new Error('Preview not available');
+                
+                const data = await response.json();
+                document.getElementById(elementId).textContent = data.preview || 'Preview not available';
+            } catch (error) {
+                console.error(`Error loading ${type} preview:`, error);
+                document.getElementById(elementId).textContent = 'Preview not available';
+            }
+        }
+        // Fetch previews
+        fetchPreview(currentFileId, 'original', 'originalPreview');
+        fetchPreview(currentFileId, 'redacted', 'redactedPreview');
         // Helper function to format file size
         function formatFileSize(bytes) {
             if (bytes === 0) return '0 Bytes';
