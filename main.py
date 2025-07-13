@@ -12,8 +12,6 @@ from transformers import AutoTokenizer, AutoModelForTokenClassification
 from transformers import pipeline
 from PyPDF2 import PdfWriter, PdfReader
 import torch
-import re
-from typing import List, Dict
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfbase import pdfmetrics
@@ -33,25 +31,28 @@ logger = get_logger(__name__)
 
 class PIIRedactor:
     def __init__(self):
-        """Initialize with better PII detection settings"""
+        """Initialize the PII redactor with model and configurations"""
         logger.info("=====Initializing PIIRedactor======")
         try:
+            logger.info("Loading PII detection model from Hugging Face")
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                "ab-ai/pii_model",
+                cache_dir="./models",
+                force_download=False
+            )
+            self.model = AutoModelForTokenClassification.from_pretrained(
+                "ab-ai/pii_model",
+                cache_dir="./models",
+                force_download=False
+            )
+            logger.info("Model loaded successfully, creating pipeline")
             self.nlp = pipeline(
                 "ner",
-                model="dslim/bert-large-NER",  # More comprehensive model
-                aggregation_strategy="max",  # Better for PII aggregation
+                model=self.model,
+                tokenizer=self.tokenizer,
+                aggregation_strategy="simple",
                 device=0 if torch.cuda.is_available() else -1
             )
-            # Add custom patterns for better detection
-            self.custom_patterns = {
-                'PHONE': r'(\+?\d{1,2}\s?)?(\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})',
-                'CREDIT_CARD': r'\b(?:\d[ -]*?){13,16}\b',
-                'CVV': r'\b\d{3,4}\b',
-                'EXPIRY_DATE': r'\b(0[1-9]|1[0-2])/(\d{2})\b',
-                'STUDENT_ID': r'\bU\d{4}[A-Z]{2}\d{3}\b',
-                'PHONE': r'\b(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b',
-                'EMAIL': r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
-            }
         except Exception as e:
             logger.error(f"Model loading failed: {str(e)}")
             raise CustomException("PIIRedactor initialization failed", e)
@@ -59,35 +60,34 @@ class PIIRedactor:
     def extract_text_from_pdf(self, pdf_path):
         """Extract text from PDF with image preprocessing"""
         try:
-            # Set Poppler path
-            poppler_path = r"C:\Users\Devansh\poppler\poppler-24.08.0\Library\bin"
             # Verify file exists
             if not os.path.exists(pdf_path):
                 raise FileNotFoundError(f"PDF file not found at {pdf_path}")
 
+            # Set Poppler path
+            poppler_path = r"C:\Users\Devansh\poppler\poppler-24.08.0\Library\bin"
+            
+            # Convert PDF to images with higher DPI for better accuracy
             pages = convert_from_path(
                 pdf_path,
                 dpi=400,
                 poppler_path=poppler_path,
-                grayscale=True,
-                thread_count=4
+                grayscale=True  # Better for OCR
             )
             
-            custom_config = r'--oem 3 --psm 6 -c preserve_interword_spaces=1'
             full_text = ""
-            position_data = []
+            position_data = []  # Stores text position info for each page
             
             for page in pages:
-                # Enhanced image preprocessing
+                # Preprocess image
                 page = page.filter(ImageFilter.SHARPEN)
-                page = page.filter(ImageFilter.MedianFilter(size=3))
-                page = page.point(lambda x: 0 if x < 140 else 255)  # Better binarization
+                page = page.filter(ImageFilter.MedianFilter())
                 
+                # Get both text and its position data
                 data = pytesseract.image_to_data(
                     page,
                     output_type=pytesseract.Output.DICT,
-                    config=custom_config,
-                    lang='eng'
+                    config='--psm 6 --oem 3'  # Optimal for documents
                 )
                 
                 page_text = " ".join([t for t in data['text'] if t.strip()])
@@ -100,71 +100,52 @@ class PIIRedactor:
             logger.error(f"PDF extraction failed: {str(e)}")
             raise CustomException("Text extraction failed", e)
     
-    def detect_pii(self, text: str) -> List[Dict]:
-        """Enhanced PII detection with custom patterns"""
+    def detect_pii(self, text):
+        """Detect PII entities in text using the model"""
+        logger.info("Detecting PII entities in text")
         try:
-            # First use the NLP model
             results = self.nlp(text)
-            
-            # Add custom pattern matches
-            for label, pattern in self.custom_patterns.items():
-                for match in re.finditer(pattern, text, re.IGNORECASE):
-                    # Avoid overlapping with existing entities
-                    overlap = False
-                    for entity in results:
-                        if not (match.end() <= entity['start'] or match.start() >= entity['end']):
-                            overlap = True
-                            break
-                    
-                    if not overlap:
-                        results.append({
-                            'entity_group': label,
-                            'word': match.group(),
-                            'start': match.start(),
-                            'end': match.end(),
-                            'score': 0.99  # High confidence for pattern matches
-                        })
-            
-            # Post-process to merge adjacent entities
-            results = self._merge_adjacent_entities(results)
-            
             logger.info(f"Detected {len(results)} PII entities")
+            logger.debug(f"PII entities details: {results}")
             return results
-            
         except Exception as e:
             logger.error(f"PII detection failed: {str(e)}")
             raise CustomException("PII detection failed", e)
 
     def redact_text(self, text, pii_entities):
-        """Smarter redaction that preserves context"""
-        # Sort entities by start position (descending)
-        pii_entities.sort(key=lambda x: x['start'], reverse=True)
-        
-        # Create a list of redaction ranges
-        redactions = []
-        for entity in pii_entities:
-            # Only redact if confidence is high enough
-            if entity.get('score', 1.0) > 0.7:
-                redactions.append((entity['start'], entity['end']))
-        
-        # Apply redactions
-        redacted_text = text
-        for start, end in redactions:
-            redacted_text = redacted_text[:start] + '█' * (end - start) + redacted_text[end:]
-        
-        return redacted_text
+        """Redact detected PII entities in text"""
+        logger.info("Redacting PII in text")
+        try:
+            # Sort entities by start position (descending) to avoid offset issues
+            pii_entities.sort(key=lambda x: x['start'], reverse=True)
+            redaction_count = 0
+            
+            for entity in pii_entities:
+                start = entity['start']
+                end = entity['end']
+                entity_text = text[start:end]
+                redaction = '█' * len(entity_text)
+                text = text[:start] + redaction + text[end:]
+                redaction_count += 1
+                
+            logger.info(f"Redacted {redaction_count} PII entities in text")
+            return text
+            
+        except Exception as e:
+            logger.error(f"Text redaction failed: {str(e)}")
+            raise CustomException("Text redaction failed", e)
         
     def calculate_accuracy(self, text, pii_entities):
         """Calculate percentage of correctly redacted PII"""
         correct = 0
         for entity in pii_entities:
             redacted_portion = text[entity['start']:entity['end']]
-            if '█' in redacted_portion:
+            if all(c == '█' for c in redacted_portion):  # Check ALL characters are redacted
                 correct += 1
         return correct / len(pii_entities) if pii_entities else 1.0
     
     def create_redacted_pdf(self, original_pdf_path, output_pdf_path, pii_entities, position_data):
-        """Improved PDF redaction with better box placement"""
+        """Create PDF with precise redaction boxes"""
         try:
             poppler_path = r"C:\Users\Devansh\poppler\poppler-24.08.0\Library\bin"
             pages = convert_from_path(original_pdf_path, dpi=400, poppler_path=poppler_path)
@@ -173,74 +154,36 @@ class PIIRedactor:
             for page_idx, (page_img, page_data) in enumerate(zip(pages, position_data)):
                 draw = ImageDraw.Draw(page_img)
                 
-                # Create a mapping of text to positions
-                text_positions = {}
-                for i in range(len(page_data['text'])):
-                    text = page_data['text'][i]
-                    if text.strip():
-                        text_positions[text] = {
-                            'x': page_data['left'][i],
-                            'y': page_data['top'][i],
-                            'w': page_data['width'][i],
-                            'h': page_data['height'][i]
-                        }
-                
                 for entity in pii_entities:
-                    entity_text = entity['word']
-                    
-                    # Try to find exact match first
-                    if entity_text in text_positions:
-                        pos = text_positions[entity_text]
-                        self._draw_redaction_box(draw, pos['x'], pos['y'], pos['w'], pos['h'])
-                        continue
-                    
-                    # Handle partial matches (for multi-word entities)
-                    for text, pos in text_positions.items():
-                        if entity_text.lower() in text.lower():
-                            self._draw_redaction_box(draw, pos['x'], pos['y'], pos['w'], pos['h'])
+                    # Find matching text in page data
+                    for i in range(len(page_data['text'])):
+                        text = page_data['text'][i]
+                        if text.strip() and entity['word'].lower() in text.lower():
+                            x = page_data['left'][i]
+                            y = page_data['top'][i]
+                            w = page_data['width'][i]
+                            h = page_data['height'][i]
+                            
+                            # Add padding and redact
+                            padding = 2
+                            draw.rectangle(
+                                [x-padding, y-padding, x+w+padding, y+h+padding],
+                                fill='black'
+                            )
                 
-                # Convert back to PDF
+                # Convert back to PDF properly
                 img_bytes = io.BytesIO()
-                page_img.save(img_bytes, format='PDF')
+                page_img.save(img_bytes, format='PDF', quality=100)
                 img_bytes.seek(0)
                 writer.add_page(PdfReader(img_bytes).pages[0])
             
+            # Properly save the PDF
             with open(output_pdf_path, 'wb') as f:
                 writer.write(f)
                 
         except Exception as e:
             logger.error(f"PDF redaction failed: {str(e)}")
             raise CustomException("PDF redaction failed", e)
-        
-    def _merge_adjacent_entities(self, entities: List[Dict]) -> List[Dict]:
-        """Merge adjacent entities of the same type"""
-        if not entities:
-            return []
-            
-        entities.sort(key=lambda x: x['start'])
-        merged = [entities[0]]
-        
-        for current in entities[1:]:
-            last = merged[-1]
-            if (current['entity_group'] == last['entity_group'] and 
-                current['start'] <= last['end']):
-                # Merge them
-                last['word'] = last['word'] + ' ' + current['word']
-                last['end'] = current['end']
-            else:
-                merged.append(current)
-                
-        return merged
-    
-    def _draw_redaction_box(self, draw, x, y, w, h, padding=3):
-        """Draw a redaction box with proper padding"""
-        # Adjust for multi-line entities
-        padding = max(3, padding)
-        draw.rectangle(
-            [x-padding, y-padding, x+w+padding, y+h+padding],
-            fill='black',
-            outline='black'
-        )
 
     def redact_pdf(self, input_pdf_path, output_pdf_path):
         """Main redaction workflow with accuracy tracking"""
@@ -251,22 +194,32 @@ class PIIRedactor:
             # 2. Detect PII
             pii_entities = self.detect_pii(text)
             
-            # 3. Create redacted PDF
+            # 3. Redact text and calculate accuracy
+            redacted_text = self.redact_text(text, pii_entities)
+            accuracy = self.calculate_accuracy(redacted_text, pii_entities)
+            
+            logger.info(f"Redaction accuracy: {accuracy:.2%}")
+
+            # 4. Count PII types
+            pii_types = {}
+            for entity in pii_entities:
+                entity_type = entity['entity_group']
+                pii_types[entity_type] = pii_types.get(entity_type, 0) + 1
+            
+            # 5. Create redacted PDF
             self.create_redacted_pdf(input_pdf_path, output_pdf_path, pii_entities, position_data)
             
             # 4. Get page count
             reader = PdfReader(input_pdf_path)
             page_count = len(reader.pages)
             
-            # 5. Generate accuracy report
-            accuracy = self.calculate_accuracy(text, pii_entities)
-            logger.info(f"Redaction accuracy: {accuracy:.2%}")
             
             return {
                 'redacted_pdf_path': output_pdf_path,
                 'pii_entities': pii_entities,
-                'accuracy': accuracy,
-                'page_count': page_count
+                'accuracy': float(accuracy),  # Convert to float for JSON serialization
+                'page_count': page_count,
+                'pii_types': pii_types  # Add this line
             }
             
         except Exception as e:

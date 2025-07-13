@@ -1,0 +1,1 @@
+{"status": "completed", "timestamp": "37e32f74-a621-41d0-95e1-2cce4dd4f3c1", "data": {"processed_path": "processed\\redacted_0e23f609-1e4b-45ff-b0b0-1592e71bbea3_bsl_intro.pdf", "original_filename": "bsl_intro.pdf", "pii_count": 7, "accuracy": 1.0, "page_count": 2, "pii_types": {"STATE": 2, "CITY": 1, "LASTNAME": 2, "FIRSTNAME": 2}}}

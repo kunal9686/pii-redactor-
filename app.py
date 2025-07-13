@@ -89,7 +89,8 @@ def upload_file():
                     'original_filename': original_filename,
                     'pii_count': len(result['pii_entities']),
                     'accuracy': result['accuracy'],
-                    'page_count': result.get('page_count', 1)
+                    'page_count': result.get('page_count', 1),
+                    'pii_types': result.get('pii_types', {})  # Add this line
                 })
             except Exception as e:
                 logging.error(f"Error processing file: {str(e)}")
@@ -120,7 +121,8 @@ def check_status(file_id):
             'stats': {
                 'pii_count': status_data['data'].get('pii_count', 0),
                 'accuracy': status_data['data'].get('accuracy', 0.0),
-                'page_count': status_data['data'].get('page_count', 1)
+                'page_count': status_data['data'].get('page_count', 1),
+                'pii_types': status_data['data'].get('pii_types', {})  # Add this line
             }
         })
     elif status_data['status'] == 'failed':
@@ -154,6 +156,26 @@ def download_file(file_id):
         download_name=download_filename,
         mimetype='application/pdf'
     )
+
+@app.route('/preview/original/<file_id>', methods=['GET'])
+def get_original_preview(file_id):
+    status_data = get_status(file_id)
+    if not status_data:
+        return jsonify({'error': 'File not found'}), 404
+    
+    # Get the first 500 characters of the original text
+    original_text = status_data['data'].get('original_snippet', '')
+    return jsonify({'preview': original_text})
+
+@app.route('/preview/redacted/<file_id>', methods=['GET'])
+def get_redacted_preview(file_id):
+    status_data = get_status(file_id)
+    if not status_data:
+        return jsonify({'error': 'File not found'}), 404
+    
+    # Get the first 500 characters of the redacted text
+    redacted_text = status_data['data'].get('redacted_snippet', '')
+    return jsonify({'preview': redacted_text})
 
 @app.route('/sample', methods=['GET'])
 def process_sample():
@@ -189,7 +211,12 @@ def process_sample():
                 'original_filename': 'sample.pdf',
                 'pii_count': 8,
                 'accuracy': 0.95,
-                'page_count': 3
+                'page_count': 3,
+                'pii_types': {  # Add sample PII types
+                    'PER': 3,
+                    'LOC': 3,
+                    'PHONE': 2
+                }
             })
             
         except Exception as e:

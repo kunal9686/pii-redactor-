@@ -43,35 +43,15 @@
             100% { opacity: 0.8; }
         }
         
-        .step-item {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
+        .tooltip {
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity 0.3s;
         }
         
-        .step-icon {
-            width: 3rem;
-            height: 3rem;
-            border-radius: 0.5rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.25rem;
-        }
-        
-        .step-text {
-            flex: 1;
-        }
-        
-        .step-title {
-            font-weight: 600;
-            color: #374151;
-            margin-bottom: 0.25rem;
-        }
-        
-        .step-status {
-            font-size: 0.875rem;
-            color: #6b7280;
+        .has-tooltip:hover .tooltip {
+            visibility: visible;
+            opacity: 1;
         }
     </style>
 </head>
@@ -86,13 +66,6 @@
                 Protect sensitive information by automatically detecting and redacting Personally Identifiable Information (PII) from your PDF documents.
             </p>
         </header>
-
-        <!-- Connection Status -->
-        <div id="connectionStatus" class="max-w-4xl mx-auto mb-4 hidden">
-            <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-                <strong>Connection Error:</strong> Cannot connect to the server. Please make sure the Flask app is running on http://localhost:5000
-            </div>
-        </div>
 
         <!-- Main Content -->
         <main class="max-w-4xl mx-auto">
@@ -232,7 +205,7 @@
                                     <div class="flex items-center">
                                         <p id="accuracyScore" class="text-2xl font-bold text-indigo-600 mr-2">98%</p>
                                         <div class="h-2 w-full bg-gray-200 rounded-full">
-                                            <div id="accuracyBar" class="h-2 bg-indigo-600 rounded-full" style="width: 98%"></div>
+                                            <div class="h-2 bg-indigo-600 rounded-full" style="width: 98%"></div>
                                         </div>
                                     </div>
                                 </div>
@@ -253,6 +226,7 @@
                             </div>
                             
                             <div id="piiTypes" class="space-y-3">
+                                <!-- Dynamically populated -->
                                 <div class="flex justify-between items-center">
                                     <span class="text-sm font-medium text-gray-700">Names</span>
                                     <span class="text-sm font-bold text-blue-600">5</span>
@@ -298,20 +272,68 @@
                             </div>
                         </div>
                     </div>
+                    
+                    <!-- Preview Section -->
+                    <div class="mt-8">
+                        <h3 class="text-lg font-medium text-gray-800 mb-4">Document Preview</h3>
+                        <div class="border border-gray-200 rounded-lg overflow-hidden">
+                            <div class="bg-gray-50 p-3 border-b border-gray-200 flex items-center justify-between">
+                                <div class="flex items-center space-x-2">
+                                    <i class="fas fa-file-pdf text-red-500"></i>
+                                    <span class="text-sm font-medium">Redacted_Preview.pdf</span>
+                                </div>
+                                <div class="flex space-x-2">
+                                    <button class="p-1 text-gray-500 hover:text-gray-700">
+                                        <i class="fas fa-search-plus"></i>
+                                    </button>
+                                    <button class="p-1 text-gray-500 hover:text-gray-700">
+                                        <i class="fas fa-search-minus"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="h-64 bg-gray-100 flex items-center justify-center overflow-auto p-4">
+                                <div class="bg-white shadow-sm p-4 max-w-md mx-auto relative">
+                                    <!-- Sample redacted content - would be dynamic in real app -->
+                                    <div class="mb-4">
+                                        <p class="text-sm text-gray-500">Original:</p>
+                                        <p class="text-gray-800">John Doe lives at 123 Main St, Springfield.</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm text-gray-500">Redacted:</p>
+                                        <p class="text-gray-800">
+                                            <span class="redaction-box bg-black text-black inline-block px-1">████  ███</span> 
+                                            lives at 
+                                            <span class="redaction-box bg-black text-black inline-block px-1">███  ████  ██</span>, 
+                                            <span class="redaction-box bg-black text-black inline-block px-1">███████████</span>.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </main>
 
         <!-- Footer -->
         <footer class="mt-16 text-center text-gray-500 text-sm">
+            <div class="flex justify-center space-x-6 mb-4">
+                <a href="#" class="text-gray-500 hover:text-indigo-600">
+                    <i class="fab fa-github"></i>
+                </a>
+                <a href="#" class="text-gray-500 hover:text-indigo-600">
+                    <i class="fas fa-question-circle"></i>
+                </a>
+                <a href="#" class="text-gray-500 hover:text-indigo-600">
+                    <i class="fas fa-shield-alt"></i>
+                </a>
+            </div>
             <p>SecurePDF - Protecting your sensitive information with AI-powered redaction</p>
+            <p class="mt-1">© 2023 SecurePDF. All rights reserved.</p>
         </footer>
     </div>
 
     <script>
-        // Configuration
-        const API_BASE_URL = 'http://localhost:5001';
-        
         // DOM Elements
         const pdfInput = document.getElementById('pdfInput');
         const dropZone = document.getElementById('dropZone');
@@ -330,32 +352,18 @@
         const resultIcon = document.getElementById('resultIcon');
         const totalPII = document.getElementById('totalPII');
         const accuracyScore = document.getElementById('accuracyScore');
-        const accuracyBar = document.getElementById('accuracyBar');
         const pageCount = document.getElementById('pageCount');
-        const connectionStatus = document.getElementById('connectionStatus');
+        const piiTypes = document.getElementById('piiTypes');
+
+        // DOM Elements (keep your existing element declarations)
 
         // Global variable to track the current file ID
         let currentFileId = null;
-
-        // Test server connection on page load
-        window.addEventListener('load', testConnection);
 
         // Event Listeners
         sampleBtn.addEventListener('click', useSamplePDF);
         downloadBtn.addEventListener('click', downloadRedactedPDF);
         newDocumentBtn.addEventListener('click', resetForm);
-
-        // Test server connection
-        async function testConnection() {
-            try {
-                const response = await fetch(`${API_BASE_URL}/test`);
-                // Even if the route doesn't exist, we'll get a 404 which means the server is running
-                connectionStatus.classList.add('hidden');
-            } catch (error) {
-                connectionStatus.classList.remove('hidden');
-                console.error('Server connection failed:', error);
-            }
-        }
 
         // Handle file selection
         function handleFileSelect() {
@@ -364,7 +372,30 @@
                 uploadAndProcessFile(file);
             }
         }
-
+        // Helper function to update PII types breakdown
+        function updatePiiTypes(piiTypesData) {
+            // Clear existing content
+            piiTypes.innerHTML = '';
+            
+            // Add each type to the display
+            for (const [type, count] of Object.entries(piiTypesData)) {
+                const div = document.createElement('div');
+                div.className = 'flex justify-between items-center';
+                div.innerHTML = `
+                    <span class="text-sm font-medium text-gray-700">${type}</span>
+                    <span class="text-sm font-bold text-blue-600">${count}</span>
+                `;
+                piiTypes.appendChild(div);
+            }
+            
+            // If no PII types data, show a message
+            if (Object.keys(piiTypesData).length === 0) {
+                const div = document.createElement('div');
+                div.className = 'text-sm text-gray-500 text-center py-2';
+                div.textContent = 'No PII types data available';
+                piiTypes.appendChild(div);
+            }
+        }
         // Handle file drop
         function handleDrop(e) {
             e.preventDefault();
@@ -380,7 +411,7 @@
         }
 
         // Upload and process the file
-        async function uploadAndProcessFile(file) {
+        function uploadAndProcessFile(file) {
             // Validate file size (max 20MB)
             if (file.size > 20 * 1024 * 1024) {
                 showToast('File size exceeds 20MB limit', 'error');
@@ -398,14 +429,12 @@
             const formData = new FormData();
             formData.append('file', file);
             
-            try {
-                const response = await fetch(`${API_BASE_URL}/upload`, {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                const data = await response.json();
-                
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
                 if (data.error) {
                     showToast(data.error, 'error');
                     resetForm();
@@ -414,15 +443,15 @@
                 
                 currentFileId = data.file_id;
                 checkProcessingStatus();
-                
-            } catch (error) {
+            })
+            .catch(error => {
                 showToast('Upload failed: ' + error.message, 'error');
                 resetForm();
-            }
+            });
         }
 
         // Use sample PDF
-        async function useSamplePDF() {
+        function useSamplePDF() {
             showToast('Processing sample PDF...', 'info');
             
             // Show processing section
@@ -430,10 +459,11 @@
             fileSize.textContent = '1.8 MB';
             processingSection.classList.remove('hidden');
             
-            try {
-                const response = await fetch(`${API_BASE_URL}/sample`);
-                const data = await response.json();
-                
+            fetch('/sample', {
+                method: 'GET'
+            })
+            .then(response => response.json())
+            .then(data => {
                 if (data.error) {
                     showToast(data.error, 'error');
                     resetForm();
@@ -442,26 +472,22 @@
                 
                 currentFileId = data.file_id;
                 checkProcessingStatus();
-                
-            } catch (error) {
+            })
+            .catch(error => {
                 showToast('Sample processing failed: ' + error.message, 'error');
                 resetForm();
-            }
+            });
         }
 
         // Check processing status periodically
-        async function checkProcessingStatus() {
-            try {
-                const response = await fetch(`${API_BASE_URL}/status/${currentFileId}`);
-                const data = await response.json();
-                
+        function checkProcessingStatus() {
+            fetch(`/status/${currentFileId}`)
+            .then(response => response.json())
+            .then(data => {
                 if (data.status === 'completed') {
                     processingComplete(data);
-                } else if (data.status === 'failed') {
-                    showToast('Processing failed: ' + data.error, 'error');
-                    resetForm();
                 } else {
-                    // Update progress (simulated)
+                    // Update progress (simulated since we don't have real progress from backend)
                     const currentProgress = parseInt(progressBar.style.width) || 0;
                     const newProgress = currentProgress < 90 ? currentProgress + 10 : 90;
                     updateProgress(newProgress);
@@ -469,10 +495,11 @@
                     // Check again after delay
                     setTimeout(checkProcessingStatus, 2000);
                 }
-            } catch (error) {
+            })
+            .catch(error => {
                 console.error('Status check failed:', error);
                 setTimeout(checkProcessingStatus, 2000);
-            }
+            });
         }
 
         // Update progress bar
@@ -508,10 +535,14 @@
                 
                 // Populate results from backend data
                 totalPII.textContent = data.stats.pii_count;
-                const accuracy = Math.round(data.stats.accuracy * 100);
-                accuracyScore.textContent = `${accuracy}%`;
-                accuracyBar.style.width = `${accuracy}%`;
+                // Format accuracy as percentage with 1 decimal place
+                const accuracyPercent = (data.stats.accuracy * 100).toFixed(1);
+                accuracyScore.textContent = `${accuracyPercent}%`;
+
+                // Update the progress bar width for accuracy visualization
+                document.querySelector('#accuracyScore + div > div').style.width = `${accuracyPercent}%`;
                 pageCount.textContent = data.stats.page_count;
+                updatePiiTypes(data.stats.pii_types);
                 
                 // Scroll to results
                 resultsSection.scrollIntoView({ behavior: 'smooth' });
@@ -519,7 +550,7 @@
         }
 
         // Download redacted PDF
-        async function downloadRedactedPDF() {
+        function downloadRedactedPDF() {
             if (!currentFileId) {
                 showToast('No file to download', 'error');
                 return;
@@ -527,14 +558,14 @@
             
             showToast('Downloading redacted PDF...', 'info');
             
-            try {
-                const response = await fetch(`${API_BASE_URL}/download/${currentFileId}`);
-                
+            fetch(`/download/${currentFileId}`)
+            .then(response => {
                 if (!response.ok) {
                     throw new Error('Download failed');
                 }
-                
-                const blob = await response.blob();
+                return response.blob();
+            })
+            .then(blob => {
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
@@ -544,10 +575,10 @@
                 window.URL.revokeObjectURL(url);
                 a.remove();
                 showToast('Download complete!', 'success');
-                
-            } catch (error) {
+            })
+            .catch(error => {
                 showToast('Download failed: ' + error.message, 'error');
-            }
+            });
         }
 
         // Reset form to initial state
@@ -574,6 +605,8 @@
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
+        // Keep your existing helper functions (formatFileSize, showToast)
+
         // Helper function to format file size
         function formatFileSize(bytes) {
             if (bytes === 0) return '0 Bytes';
@@ -586,7 +619,7 @@
         // Show toast notification
         function showToast(message, type) {
             const toast = document.createElement('div');
-            toast.className = `fixed bottom-4 right-4 px-4 py-2 rounded-lg shadow-lg text-white z-50 ${
+            toast.className = `fixed bottom-4 right-4 px-4 py-2 rounded-lg shadow-lg text-white ${
                 type === 'error' ? 'bg-red-500' : 
                 type === 'success' ? 'bg-green-500' : 'bg-blue-500'
             }`;
