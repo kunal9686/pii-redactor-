@@ -296,16 +296,11 @@
                                     <!-- Sample redacted content - would be dynamic in real app -->
                                     <div class="mb-4">
                                         <p class="text-sm text-gray-500">Original:</p>
-                                        <p class="text-gray-800">John Doe lives at 123 Main St, Springfield.</p>
+                                        <p id="originalPreview" class="text-gray-800 whitespace-pre-wrap"></p>
                                     </div>
                                     <div>
                                         <p class="text-sm text-gray-500">Redacted:</p>
-                                        <p class="text-gray-800">
-                                            <span class="redaction-box bg-black text-black inline-block px-1">████  ███</span> 
-                                            lives at 
-                                            <span class="redaction-box bg-black text-black inline-block px-1">███  ████  ██</span>, 
-                                            <span class="redaction-box bg-black text-black inline-block px-1">███████████</span>.
-                                        </p>
+                                        <p id="redactedPreview" class="text-gray-800 whitespace-pre-wrap"></p>
                                     </div>
                                 </div>
                             </div>
@@ -372,7 +367,30 @@
                 uploadAndProcessFile(file);
             }
         }
-
+        // Helper function to update PII types breakdown
+        function updatePiiTypes(piiTypesData) {
+            // Clear existing content
+            piiTypes.innerHTML = '';
+            
+            // Add each type to the display
+            for (const [type, count] of Object.entries(piiTypesData)) {
+                const div = document.createElement('div');
+                div.className = 'flex justify-between items-center';
+                div.innerHTML = `
+                    <span class="text-sm font-medium text-gray-700">${type}</span>
+                    <span class="text-sm font-bold text-blue-600">${count}</span>
+                `;
+                piiTypes.appendChild(div);
+            }
+            
+            // If no PII types data, show a message
+            if (Object.keys(piiTypesData).length === 0) {
+                const div = document.createElement('div');
+                div.className = 'text-sm text-gray-500 text-center py-2';
+                div.textContent = 'No PII types data available';
+                piiTypes.appendChild(div);
+            }
+        }
         // Handle file drop
         function handleDrop(e) {
             e.preventDefault();
@@ -512,8 +530,14 @@
                 
                 // Populate results from backend data
                 totalPII.textContent = data.stats.pii_count;
-                accuracyScore.textContent = `${Math.round(data.stats.accuracy * 100)}%`;
+                // Format accuracy as percentage with 1 decimal place
+                const accuracyPercent = (data.stats.accuracy * 100).toFixed(1);
+                accuracyScore.textContent = `${accuracyPercent}%`;
+
+                // Update the progress bar width for accuracy visualization
+                document.querySelector('#accuracyScore + div > div').style.width = `${accuracyPercent}%`;
                 pageCount.textContent = data.stats.page_count;
+                updatePiiTypes(data.stats.pii_types);
                 
                 // Scroll to results
                 resultsSection.scrollIntoView({ behavior: 'smooth' });
@@ -576,8 +600,21 @@
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
-        // Keep your existing helper functions (formatFileSize, showToast)
-
+        async function fetchPreview(fileId, type, elementId) {
+            try {
+                const response = await fetch(`/preview/${type}/${fileId}`);
+                if (!response.ok) throw new Error('Preview not available');
+                
+                const data = await response.json();
+                document.getElementById(elementId).textContent = data.preview || 'Preview not available';
+            } catch (error) {
+                console.error(`Error loading ${type} preview:`, error);
+                document.getElementById(elementId).textContent = 'Preview not available';
+            }
+        }
+        // Fetch previews
+        fetchPreview(currentFileId, 'original', 'originalPreview');
+        fetchPreview(currentFileId, 'redacted', 'redactedPreview');
         // Helper function to format file size
         function formatFileSize(bytes) {
             if (bytes === 0) return '0 Bytes';

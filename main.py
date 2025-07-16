@@ -140,7 +140,7 @@ class PIIRedactor:
         correct = 0
         for entity in pii_entities:
             redacted_portion = text[entity['start']:entity['end']]
-            if '█' in redacted_portion:
+            if all(c == '█' for c in redacted_portion):  # Check ALL characters are redacted
                 correct += 1
         return correct / len(pii_entities) if pii_entities else 1.0
     
@@ -171,12 +171,13 @@ class PIIRedactor:
                                 fill='black'
                             )
                 
-                # Convert back to PDF
+                # Convert back to PDF properly
                 img_bytes = io.BytesIO()
-                page_img.save(img_bytes, format='PDF')
+                page_img.save(img_bytes, format='PDF', quality=100)
                 img_bytes.seek(0)
                 writer.add_page(PdfReader(img_bytes).pages[0])
             
+            # Properly save the PDF
             with open(output_pdf_path, 'wb') as f:
                 writer.write(f)
                 
@@ -184,26 +185,45 @@ class PIIRedactor:
             logger.error(f"PDF redaction failed: {str(e)}")
             raise CustomException("PDF redaction failed", e)
 
-    def redact_pdf(self, input_pdf_path, output_pdf_path):
+    def redact_pdf(self, input_pdf_path, output_pdf_path, include_snippets=False):
         """Main redaction workflow with accuracy tracking"""
         try:
             # 1. Extract text with position data
             text, position_data = self.extract_text_from_pdf(input_pdf_path)
-            
+            original_snippet = text[:500] if include_snippets else ""
+
             # 2. Detect PII
             pii_entities = self.detect_pii(text)
             
-            # 3. Create redacted PDF
+            # 3. Redact text and calculate accuracy
+            redacted_text = self.redact_text(text, pii_entities)
+            accuracy = self.calculate_accuracy(redacted_text, pii_entities)
+            redacted_snippet = redacted_text[:500] if include_snippets else ""
+
+            logger.info(f"Redaction accuracy: {accuracy:.2%}")
+
+            # 4. Count PII types
+            pii_types = {}
+            for entity in pii_entities:
+                entity_type = entity['entity_group']
+                pii_types[entity_type] = pii_types.get(entity_type, 0) + 1
+            
+            # 5. Create redacted PDF
             self.create_redacted_pdf(input_pdf_path, output_pdf_path, pii_entities, position_data)
             
-            # 4. Generate accuracy report
-            accuracy = self.calculate_accuracy(text, pii_entities)
-            logger.info(f"Redaction accuracy: {accuracy:.2%}")
+            # 4. Get page count
+            reader = PdfReader(input_pdf_path)
+            page_count = len(reader.pages)
+            
             
             return {
                 'redacted_pdf_path': output_pdf_path,
                 'pii_entities': pii_entities,
-                'accuracy': accuracy
+                'accuracy': float(accuracy),  # Convert to float for JSON serialization
+                'page_count': page_count,
+                'pii_types': pii_types,
+                'original_snippet': original_snippet,
+                'redacted_snippet': redacted_snippet
             }
             
         except Exception as e:
