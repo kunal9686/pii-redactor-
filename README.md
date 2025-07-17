@@ -169,5 +169,5 @@ Test if the API is live and responsive.
 
 ## 🧑‍💻 Author
 
-> Built by \[DEVANSH , KUNAL] — focused on privacy-first document handling using deep learning.
+> Built by [DEVANSH](https://github.com/Devaur03) , [KUNAL](https://github.com/kunal9686) — focused on privacy-first document handling using deep learning.
 
