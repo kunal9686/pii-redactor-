@@ -11,6 +11,7 @@ This project is a **Flask-based web service** that allows users to upload PDF do
 ```
 ├── app.py                 # Contains core logic for PII redaction
 ├── main.py                # Flask server handling file uploads, redaction, and downloads
+├── requirements.txt       # Install requirements
 ├── uploads/               # Stores uploaded PDF files
 ├── processed/             # Stores redacted output PDFs
 ├── status/                # JSON files tracking redaction status
@@ -61,7 +62,7 @@ pip install -r requirements.txt
 Start the Flask app:
 
 ```bash
-python main.py
+python app.py
 ```
 
 Visit: [http://localhost:5001](http://localhost:5001)
