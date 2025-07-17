@@ -138,7 +138,7 @@ Test if the API is live and responsive.
 
 ## 🛠 Configuration Tips
 
-* 📍 Update hardcoded file paths like `samples/khushi_bsl.pdf` or Poppler/Tesseract paths for your system.
+* 📍 Update hardcoded file paths like `samples/bsl.pdf` or Poppler/Tesseract paths for your system.
 * 📤 Ensure folders like `/uploads`, `/processed`, `/status` exist (created automatically if missing).
 
 ---
